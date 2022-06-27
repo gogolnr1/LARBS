@@ -57,7 +57,7 @@ preinstallmsg() { \
 adduserandpass() { \
 	# Adds user `$name` with password $pass1.
 	dialog --infobox "Adding user \"$name\"..." 4 50
-	useradd -m -G wheel -s /bin/zsh "$name" >/dev/null 2>&1 ||
+	useradd -m -g wheel -s /bin/zsh "$name" >/dev/null 2>&1 ||
 	usermod -a -G wheel "$name" && mkdir -p /home/"$name" && chown "$name":wheel /home/"$name"
 	export repodir="/home/$name/.local/src"; mkdir -p "$repodir"; chown -R "$name":wheel "$(dirname "$repodir")"
 	echo "$name:$pass1" | chpasswd
@@ -67,10 +67,20 @@ refreshkeys() { \
 	case "$(readlink -f /sbin/init)" in
 		*systemd* )
 			dialog --infobox "Refreshing Arch Keyring..." 4 40
-			pacman --noconfirm -S archlinux-keyring >/dev/null 2>&1
+			pacman --noconfirm -S archlinux-keyring polkit >/dev/null 2>&1
 			;;
 		*)
 			dialog --infobox "Enabling Arch Repositories..." 4 40
+			if ! grep -q "^\[universe\]" /etc/pacman.conf; then
+				echo "[universe]
+Server = https://universe.artixlinux.org/\$arch
+Server = https://mirror1.artixlinux.org/universe/\$arch
+Server = https://mirror.pascalpuffke.de/artix-universe/\$arch
+Server = https://artixlinux.qontinuum.space/artixlinux/universe/os/\$arch
+Server = https://mirror1.cl.netactuate.com/artix/universe/\$arch
+Server = https://ftp.crifo.org/artix-universe/" >> /etc/pacman.conf
+				pacman -Sy
+			fi
 			pacman --noconfirm --needed -S artix-keyring artix-archlinux-support >/dev/null 2>&1
 			for repo in extra community; do
 				grep -q "^\[$repo\]" /etc/pacman.conf ||
@@ -129,7 +139,7 @@ installationloop() { \
 	aurinstalled=$(pacman -Qqm)
 	while IFS=, read -r tag program comment; do
 		n=$((n+1))
-		echo "$comment" | grep -q "^\".*\"$" && comment="$(echo "$comment" | sed "s/\(^\"\|\"$\)//g")"
+		echo "$comment" | grep -q "^\".*\"$" && comment="$(echo "$comment" | sed -E "s/(^\"|\"$)//g")"
 		case "$tag" in
 			"A") aurinstall "$program" "$comment" ;;
 			"G") gitmakeinstall "$program" "$comment" ;;
@@ -199,7 +209,7 @@ newperms "%wheel ALL=(ALL) NOPASSWD: ALL"
 
 # Make pacman colorful, concurrent downloads and Pacman eye-candy.
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
-sed -i "/^#ParallelDownloads/s/=.*/= 5/;s/^#Color$/Color/" /etc/pacman.conf
+sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 
 # Use all cores for compilation.
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
@@ -235,6 +245,8 @@ systembeepoff
 # Make zsh the default shell for the user.
 chsh -s /bin/zsh "$name" >/dev/null 2>&1
 sudo -u "$name" mkdir -p "/home/$name/.cache/zsh/"
+sudo -u "$name" mkdir -p "/home/$name/.config/abook/"
+sudo -u "$name" mkdir -p "/home/$name/.config/mpd/playlists/"
 
 # dbus UUID must be generated for Artix runit.
 dbus-uuidgen > /var/lib/dbus/machine-id
